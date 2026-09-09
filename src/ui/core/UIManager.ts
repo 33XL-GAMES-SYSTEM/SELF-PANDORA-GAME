@@ -103,4 +103,37 @@ export class UIManager {
       this.settings.show();
     }
   }
+  
+  public triggerJumpscare() {
+    const overlay = document.createElement('div');
+    overlay.className = 'fixed inset-0 pointer-events-none z-[9999] bg-black';
+    overlay.style.animation = 'jumpscare-flash 0.1s infinite';
+    
+    // Create the keyframes if not exists
+    if (!document.getElementById('jumpscare-styles')) {
+      const style = document.createElement('style');
+      style.id = 'jumpscare-styles';
+      style.innerHTML = `
+        @keyframes jumpscare-flash {
+          0% { background-color: #000000; opacity: 1; }
+          50% { background-color: #550000; opacity: 0.8; }
+          100% { background-color: #000000; opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+    
+    this.uiLayerTop.appendChild(overlay);
+    
+    setTimeout(() => {
+      overlay.style.animation = 'none';
+      overlay.style.backgroundColor = 'black'; // Fade to black
+    }, 1500);
+    
+    setTimeout(() => {
+      overlay.style.transition = 'opacity 1s ease';
+      overlay.style.opacity = '0';
+      setTimeout(() => overlay.remove(), 1000);
+    }, 2500);
+  }
 }

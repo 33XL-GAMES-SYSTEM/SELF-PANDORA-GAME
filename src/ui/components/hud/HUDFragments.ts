@@ -15,8 +15,8 @@ export class HUDFragments extends BaseUIComponent {
       
       <div class="flex items-center gap-4 border border-white/15 bg-black/50 backdrop-blur-md px-5 py-3 rounded-lg shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:border-white/30 transition-colors cursor-default">
         <div class="flex flex-col items-end">
-          <span class="text-[9px] uppercase tracking-widest text-zinc-400 font-bold mb-0.5">Fragmentos</span>
-          <span id="hud-reminiscence" class="text-sm font-mono text-white tracking-wider">0 / 3</span>
+          <span class="text-[9px] uppercase tracking-widest text-zinc-400 font-bold mb-0.5">Elpis</span>
+          <span id="hud-elpis" class="text-sm font-mono text-white tracking-wider">0 / 3</span>
         </div>
         <div class="w-8 h-8 rounded-full border border-white/20 flex items-center justify-center bg-white/5 relative overflow-hidden">
           <div class="absolute inset-0 bg-white/20 animate-pulse opacity-50"></div>
@@ -28,7 +28,7 @@ export class HUDFragments extends BaseUIComponent {
     `;
 
     this.container.querySelector('#btn-exit-to-selector')?.addEventListener('click', this.onExitToSelector);
-    this.remEl = this.container.querySelector('#hud-reminiscence');
+    this.remEl = this.container.querySelector('#hud-elpis');
   }
 
   public updateCount(collected: number, total: number) {

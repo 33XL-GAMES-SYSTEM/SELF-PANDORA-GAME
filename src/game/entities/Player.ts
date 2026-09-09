@@ -6,6 +6,7 @@ export class Player {
   y = 400;
   vx = 0;
   vy = 0;
+  vz = 0;
   w = 20;
   h = 42;
   facingAngle = 0;
@@ -38,6 +39,12 @@ export class Player {
   magnetStrength = 0.05; // pull multiplier: gentle drift that accelerates near Pandora
   collectRadius = 22;    // distance at which the memory starts being absorbed
 
+  // ── Sanity ────────────────────────────────────────────────────────────
+  sanity = 1.0;          // 0..1, starts full
+  readonly maxSanity = 1.0;
+  // Drains passively each frame while playing (~3 min to deplete)
+  readonly sanityDrainRate = 0.0000556; // 1/18000 frames-at-60fps ≈ 180s
+
   rigidBody?: RAPIER.RigidBody;
   characterController?: RAPIER.KinematicCharacterController;
 
@@ -57,6 +64,7 @@ export class Player {
     this.jumpVelocity = 0;
     this.isJumping = false;
     this.jumpCooldown = 0;
+    this.sanity = 1.0;  // Reset sanity on every spawn
 
     if (this.rigidBody) {
       world.removeRigidBody(this.rigidBody);
@@ -85,14 +93,15 @@ export class Player {
     let inputY = 0;
     if (up) inputX += 1;
     if (down) inputX -= 1;
-    if (left) inputY -= 1;
-    if (right) inputY += 1;
+    if (left) inputY += 1;
+    if (right) inputY -= 1;
 
     let moveDir = 0;
     if (inputX !== 0 || inputY !== 0) {
       moveDir = 1;
       const inputAngle = Math.atan2(inputY, inputX);
-      this.targetAngle = cameraAngle + inputAngle;
+      // We invert the sum because the Physics Y axis is inverted relative to Three.js Y axis
+      this.targetAngle = -(cameraAngle + inputAngle);
       this.targetAngle = (this.targetAngle + Math.PI * 2) % (Math.PI * 2);
     }
 
@@ -156,35 +165,25 @@ export class Player {
       this.jumpCooldown--;
     }
 
-    if (keys.Space && !this.isJumping && this.jumpCooldown === 0) {
-      this.isJumping = true;
-      this.jumpVelocity = this.jumpStrength;
-      this.jumpCooldown = 30;
-    }
-
-    if (this.isJumping) {
-      this.jumpHeight += this.jumpVelocity;
-      this.jumpVelocity -= this.jumpGravity;
-
-      // Give a small forward boost during the hop
-      this.vx += Math.cos(this.facingAngle) * 0.12;
-      this.vy += Math.sin(this.facingAngle) * 0.12;
-
-      if (this.jumpHeight <= 0) {
-        this.jumpHeight = 0;
-        this.jumpVelocity = 0;
-        this.isJumping = false;
-      }
-    }
-
     if (this.characterController && this.rigidBody) {
-      const collider = this.rigidBody.collider(0);
       const currentPos = this.rigidBody.translation();
+      // Consider grounded if Rapier says so, or if we hit our manual Z=0 floor
+      const isGrounded = this.characterController.computedGrounded() || currentPos.z <= 0.1;
+
+      if (keys.Space && isGrounded && this.jumpCooldown === 0) {
+        this.vz = this.jumpStrength * 3; // Scale jump strength for physics
+        this.jumpCooldown = 30;
+      }
+
+      if (!isGrounded) {
+        this.vz -= 0.6; // Gravity
+      } else if (this.vz < 0) {
+        this.vz = -0.1; // Slight downward pressure for slopes/steps
+      }
+
+      const collider = this.rigidBody.collider(0);
 
       // ── Axis-separated collision resolution ─────────────────
-      // Resolving X and Y independently lets diagonal movement slide
-      // smoothly against the axis-aligned platforms. The single diagonal
-      // sweep used before got stuck on platform corners, freezing input.
       // Move along X first and resolve collisions
       this.characterController.computeColliderMovement(
         collider,
@@ -195,10 +194,8 @@ export class Player {
       );
       const mx = this.characterController.computedMovement().x;
       const finalX = currentPos.x + mx;
-      this.vx = mx; // sync velocity to what was actually applied
+      this.vx = mx; 
 
-      // Reposition the collider before checking the Y axis so the
-      // second resolution starts from the X-resolved location
       this.rigidBody.setTranslation({ x: finalX, y: currentPos.y, z: currentPos.z }, false);
 
       // Move along Y and resolve collisions
@@ -211,16 +208,49 @@ export class Player {
       );
       const my = this.characterController.computedMovement().y;
       const finalY = currentPos.y + my;
-      this.vy = my; // sync velocity to what was actually applied
+      this.vy = my; 
+      
+      this.rigidBody.setTranslation({ x: finalX, y: finalY, z: currentPos.z }, false);
+
+      // Move along Z and resolve collisions
+      this.characterController.computeColliderMovement(
+        collider,
+        new RAPIER.Vector3(0, 0, this.vz),
+        RAPIER.QueryFilterFlags.EXCLUDE_SENSORS,
+        undefined,
+        undefined
+      );
+      const mz = this.characterController.computedMovement().z;
+      let finalZ = currentPos.z + mz;
+      this.vz = mz;
+
+      // Hardcode a floor at Z = 0 so the player doesn't fall below the map
+      if (finalZ <= 0) {
+        finalZ = 0;
+        if (this.vz < 0) this.vz = 0;
+      }
 
       this.rigidBody.setNextKinematicTranslation({
         x: finalX,
         y: finalY,
-        z: currentPos.z
+        z: finalZ
       });
 
       this.x = finalX;
       this.y = finalY;
+      
+      // Update visual jump height based on physical Z (scaled down to renderer expectations)
+      this.jumpHeight = Math.max(0, finalZ / 4);
     }
+  }
+
+  /** Restore sanity by a fixed amount (clamped to maxSanity). */
+  restoreSanity(amount: number) {
+    this.sanity = Math.min(this.maxSanity, this.sanity + amount);
+  }
+
+  /** Drain sanity passively — call once per gameplay frame. */
+  drainSanity() {
+    this.sanity = Math.max(0, this.sanity - this.sanityDrainRate);
   }
 }

@@ -179,14 +179,6 @@ export class PandoraRenderer {
     }
 
     if (jumpHeight > 0.2) {
-      if (legs) {
-        legs[0].rotation.y = 0.32;
-        legs[1].rotation.y = 0.22;
-      }
-      if (arms) {
-        arms[0].rotation.y = -0.42;
-        arms[1].rotation.y = -0.28;
-      }
       if (hair) {
         hair.rotation.x = -0.25;
       }

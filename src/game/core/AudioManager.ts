@@ -7,9 +7,12 @@ export class AudioManager {
   filterNode: BiquadFilterNode | null = null;
   filterLFO: OscillatorNode | null = null;
   filterLFOGain: GainNode | null = null;
-  heartbeatInterval: ReturnType<typeof setTimeout> | null = null;
-  heartbeatSpeed = 0;
-  heartbeatBPM = 60;
+
+  electricityGain: GainNode | null = null;
+
+  heartbeatSpeed: number = 0;
+  heartbeatInterval: any = null;
+  heartbeatBPM: number = 60;
 
   constructor() {
     if (AudioManager.instance) {
@@ -29,6 +32,7 @@ export class AudioManager {
         this.ctx = new AudioContextClass();
         this.isMuted = false;
         this.setupDrone();
+        this.setupElectricity();
         this.startHeartbeatLoop();
       } catch (e) {
         console.warn('Web Audio API is not supported in this browser:', e);
@@ -45,15 +49,75 @@ export class AudioManager {
       this.ctx.resume();
     }
     this.isMuted = !this.isMuted;
-    if (this.droneGain && this.ctx) {
-      const volume = this.isMuted ? 0 : 0.12;
+    const volume = this.isMuted ? 0 : 0.12;
+    if (this.droneGain) {
       this.droneGain.gain.setTargetAtTime(volume, this.ctx.currentTime, 0.2);
+    }
+    if (this.electricityGain) {
+      // Electricity gain is controlled dynamically by proximity, but we mute it if needed.
+      this.electricityGain.gain.setTargetAtTime(this.isMuted ? 0 : 0, this.ctx.currentTime, 0.2);
     }
     return this.isMuted;
   }
 
   getMuteStatus(): boolean {
     return this.isMuted;
+  }
+
+  setupElectricity() {
+    if (!this.ctx) return;
+    this.electricityGain = this.ctx.createGain();
+    this.electricityGain.gain.setValueAtTime(0, this.ctx.currentTime);
+
+    const osc1 = this.ctx.createOscillator();
+    osc1.type = 'sawtooth';
+    osc1.frequency.setValueAtTime(120, this.ctx.currentTime); // 120Hz base buzz
+    
+    const osc2 = this.ctx.createOscillator();
+    osc2.type = 'sawtooth';
+    osc2.frequency.setValueAtTime(121.5, this.ctx.currentTime); // slight detune creates harsh interference
+
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.frequency.setValueAtTime(2500, this.ctx.currentTime); // Focus on the higher "Zzzz" frequencies
+    filter.Q.setValueAtTime(3, this.ctx.currentTime);
+
+    // Fast crackle LFO modulating the filter
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'sawtooth';
+    lfo.frequency.setValueAtTime(55, this.ctx.currentTime);
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.setValueAtTime(1500, this.ctx.currentTime);
+    
+    lfo.connect(lfoGain);
+    lfoGain.connect(filter.frequency);
+
+    osc1.connect(filter);
+    osc2.connect(filter);
+    
+    // Add some extra gain because bandpass reduces overall volume
+    const boostGain = this.ctx.createGain();
+    boostGain.gain.setValueAtTime(2.5, this.ctx.currentTime);
+    
+    filter.connect(boostGain);
+    boostGain.connect(this.electricityGain);
+    this.electricityGain.connect(this.ctx.destination);
+    
+    osc1.start();
+    osc2.start();
+    lfo.start();
+  }
+
+  setElectricityProximity(distance: number) {
+    if (!this.ctx || !this.electricityGain || this.isMuted) return;
+    const maxDist = 900;
+    // Map distance to volume exponentially for better spatial feel
+    let vol = 0;
+    if (distance < maxDist) {
+      const normalized = 1 - (distance / maxDist);
+      vol = Math.pow(normalized, 2) * 0.15; // Max volume 0.15
+    }
+    this.electricityGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.1);
   }
 
   setupDrone() {
@@ -276,6 +340,49 @@ export class AudioManager {
       osc.start(t + delay);
       osc.stop(t + delay + 0.5);
     });
+  }
+
+  playHorrorStinger() {
+    if (!this.ctx || this.isMuted) return;
+    const t = this.ctx.currentTime;
+    
+    // Aggressive sawtooth for a sudden scare
+    const osc = this.ctx.createOscillator();
+    osc.type = 'sawtooth';
+    
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(100, t);
+    filter.frequency.exponentialRampToValueAtTime(8000, t + 0.1);
+    filter.frequency.exponentialRampToValueAtTime(100, t + 1.5);
+    
+    const gainNode = this.ctx.createGain();
+    gainNode.gain.setValueAtTime(0.001, t);
+    gainNode.gain.exponentialRampToValueAtTime(1.5, t + 0.05);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, t + 2.0);
+    
+    osc.frequency.setValueAtTime(60, t);
+    osc.frequency.linearRampToValueAtTime(150, t + 0.1);
+    osc.frequency.linearRampToValueAtTime(40, t + 1.5);
+    
+    // Frequency modulation for glitchy noise
+    const lfo = this.ctx.createOscillator();
+    lfo.type = 'square';
+    lfo.frequency.value = 45;
+    const lfoGain = this.ctx.createGain();
+    lfoGain.gain.value = 500;
+    
+    lfo.connect(lfoGain);
+    lfoGain.connect(osc.frequency);
+    
+    osc.connect(filter);
+    filter.connect(gainNode);
+    gainNode.connect(this.ctx.destination);
+    
+    lfo.start(t);
+    osc.start(t);
+    lfo.stop(t + 2.0);
+    osc.stop(t + 2.0);
   }
 
   shutdown() {

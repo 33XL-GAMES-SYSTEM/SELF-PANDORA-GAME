@@ -33,6 +33,9 @@ export class GameCoordinator {
   victoryTimer = 0;
   frameId: number | null = null;
   keys: Record<string, boolean> = {};
+  isJumpscare = false;
+  isSanityCollapse = false;
+  private vignetteEl: HTMLElement | null = null;
 
   constructor() {
     this.physicsWorld = new RAPIER.World({ x: 0, y: 0, z: -20.0 });
@@ -284,6 +287,15 @@ export class GameCoordinator {
     
     this.player.spawn(this.levelManager.playerSpawn, this.physicsWorld);
     this.shadow.spawn(this.levelManager.shadowSpawn);
+
+    // ── Sanity vignette overlay ────────────────────────────────────────────
+    if (!this.vignetteEl) {
+      this.vignetteEl = document.createElement('div');
+      this.vignetteEl.id = 'sanity-vignette';
+      document.body.appendChild(this.vignetteEl);
+    }
+    this.vignetteEl.className = ''; // Reset classes
+    this.isSanityCollapse = false;
     
     this.levelManager.initPhysics(this.physicsWorld);
 
@@ -303,7 +315,7 @@ export class GameCoordinator {
     });
 
     this.ui.hud.clearAll();
-    this.ui.hud.showStorySubtitle('A vastidão da mente me aguarda...', 4000);
+    this.ui.hud.showStorySubtitle('As Elpis aguardam nas sombras da mente...', 4000);
   }
 
   startLoop() {
@@ -371,15 +383,73 @@ export class GameCoordinator {
       );
     }
 
+    if (this.isJumpscare) return;
+
     this.player.update(this.keys, this.renderer.pandoraRenderer.cameraOrbitYaw);
+
+    // ── Sanity system ────────────────────────────────────────────────────────
+    this.player.drainSanity();
+    const sanity = this.player.sanity;
+
+    // Update HUD sanity bar
+    this.ui.hud.status.updateSanity(sanity);
+
+    // Update vignette overlay based on sanity tier
+    if (this.vignetteEl) {
+      if (sanity > 0.6) {
+        this.vignetteEl.className = '';
+      } else if (sanity > 0.35) {
+        this.vignetteEl.className = 'sanity-low';
+      } else if (sanity > 0.15) {
+        this.vignetteEl.className = 'sanity-danger';
+      } else {
+        this.vignetteEl.className = 'sanity-critical';
+      }
+    }
+
+    // Sanity zero → narrative collapse sequence
+    if (sanity <= 0 && !this.isSanityCollapse && !this.isJumpscare) {
+      this.isSanityCollapse = true;
+      this._triggerSanityCollapse();
+      return;
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     this.levelManager.worldPlatforms.forEach((p) => {
       if (p.origX === undefined) p.origX = p.x;
       if (p.origY === undefined) p.origY = p.y;
       p.x += (p.origX - p.x) * 0.1;
     });
     
-    if (this.currentNexus) {
-        this.shadow.update(this.player, this.currentNexus, false);
+    // Always update shadow and check for capture
+    const playerCaptured = this.shadow.update(this.player, sanity);
+    if (playerCaptured && !this.isJumpscare) {
+      this.isJumpscare = true;
+      this.keys = {}; // Lock input
+      this.audioManager.playHorrorStinger();
+      this.ui.triggerJumpscare();
+      
+      setTimeout(() => {
+        const spawn = this.levelManager.playerSpawn;
+        if (this.player.rigidBody) {
+          this.player.rigidBody.setTranslation({ x: spawn.x, y: spawn.y, z: 0 }, false);
+        }
+        this.player.x = spawn.x;
+        this.player.y = spawn.y;
+        this.player.vx = 0;
+        this.player.vy = 0;
+        this.player.vz = 0;
+        this.player.sanity = 0.60; // Partial sanity restore after capture
+      }, 1500);
+      
+      setTimeout(() => {
+        this.isJumpscare = false;
+        this.isSanityCollapse = false;
+        if (this.vignetteEl) this.vignetteEl.className = '';
+        // Relocate the shadow away from the respawn point
+        this.shadow.spawn(this.levelManager.shadowSpawn);
+      }, 2500);
+      return;
     }
 
     this.activeReminiscences.forEach(rem => {
@@ -421,10 +491,26 @@ export class GameCoordinator {
     });
 
     this.renderer.updatePlayer(this.player.x, this.player.y, this.player.facingAngle, this.player.jumpHeight, Math.hypot(this.player.vx, this.player.vy));
-    this.renderer.updateShadow(this.shadow.x, this.shadow.y, this.shadow.isStunned);
+    this.renderer.updateShadow(this.shadow.x, this.shadow.y, this.shadow.isStunned, this.shadow.facingAngle);
     
     this.renderer.updatePlatforms(this.levelManager.worldPlatforms, this.player.x, this.player.y);
     this.renderer.updateReminiscences(this.levelManager.worldReminiscences);
+    
+    // Calculate distance to nearest electricity column
+    let minTubesDist = 999999;
+    const colXOffsets = [-25, -18, -10, 50, 58, 65];
+    const colYOffsets = [-35, -28, -20, -10, 0, 10];
+    for (const eVal of colXOffsets) {
+      for (const tVal of colYOffsets) {
+        const x_phys = (eVal + 10) * 48;
+        const y_phys = (5 - tVal) * 48;
+        const dx = this.player.x - x_phys;
+        const dy = this.player.y - y_phys;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < minTubesDist) minTubesDist = dist;
+      }
+    }
+    this.audioManager.setElectricityProximity(minTubesDist);
     
     this.renderer.updateParticles();
     this.renderer.updateWaveRing(
@@ -466,6 +552,9 @@ export class GameCoordinator {
       this.player.y + this.player.h / 2,
       'rgba(255, 255, 255, '
     );
+
+    // Restore 25% sanity per orb
+    this.player.restoreSanity(0.25);
 
     this.ui.hud.fragments.updateCount(this.globalCollectedCount, this.levelManager.worldReminiscences.length);
     if (rem.text) {
@@ -534,5 +623,55 @@ export class GameCoordinator {
     ctx.lineTo(cx + 4, cy + 4);
     ctx.closePath();
     ctx.fill();
+  }
+
+  /**
+   * Narrative sanity collapse:
+   * 1. Show mental alteration message (0ms)
+   * 2. Force shadow into chase mode (1000ms)
+   * 3. Trigger jumpscare (2500ms)
+   * 4. Respawn with partial sanity (4000ms)
+   */
+  private _triggerSanityCollapse() {
+    this.keys = {}; // Lock player input immediately
+
+    // Step 1: Mental alteration text
+    this.ui.hud.showStorySubtitle('A mente de Pandora colapsa... ela sente a presença.', 3500);
+
+    // Step 2: Force shadow to close in quickly
+    setTimeout(() => {
+      // Override shadow position to start converging
+      this.shadow.state = 'chase' as any;
+    }, 1000);
+
+    // Step 3: Jumpscare
+    setTimeout(() => {
+      if (!this.isJumpscare) {
+        this.isJumpscare = true;
+        this.audioManager.playHorrorStinger();
+        this.ui.triggerJumpscare();
+      }
+    }, 2500);
+
+    // Step 4: Respawn
+    setTimeout(() => {
+      const spawn = this.levelManager.playerSpawn;
+      if (this.player.rigidBody) {
+        this.player.rigidBody.setTranslation({ x: spawn.x, y: spawn.y, z: 0 }, false);
+      }
+      this.player.x = spawn.x;
+      this.player.y = spawn.y;
+      this.player.vx = 0;
+      this.player.vy = 0;
+      this.player.vz = 0;
+      this.player.sanity = 0.50; // Respawn with half sanity
+    }, 4000);
+
+    setTimeout(() => {
+      this.isJumpscare = false;
+      this.isSanityCollapse = false;
+      if (this.vignetteEl) this.vignetteEl.className = '';
+      this.shadow.spawn(this.levelManager.shadowSpawn);
+    }, 5000);
   }
 }

@@ -48,7 +48,7 @@ export class HUDUI extends BaseUIComponent {
            Mouse Mover Cam • Scroll Zoom • W/A/S/D Mover • E Lucidez
         </div>
 
-        <!-- Canto Inferior Direito (Fragmentos Slot) -->
+        <!-- Canto Inferior Direito (Elpis Slot) -->
         <div id="hud-bottom-right-slot"></div>
       </div>
     `;

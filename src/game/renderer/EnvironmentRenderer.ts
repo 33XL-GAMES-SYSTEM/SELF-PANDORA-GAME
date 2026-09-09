@@ -3,34 +3,50 @@ import { type Platform } from '../level/LevelManager';
 
 function _l(t: number, n: number, s: number, cVal: THREE.Texture, u: THREE.Texture): THREE.Group {
   const f = new THREE.Group();
-  const p: number = 0x444444; // dark gray edge
   const m: THREE.Texture = s <= 15 ? cVal : u;
-  const h = (tex: THREE.Texture, nVal: number, iVal: number) => {
-    const aVal = tex.clone();
-    aVal.wrapS = THREE.RepeatWrapping;
-    aVal.wrapT = THREE.RepeatWrapping;
-    aVal.minFilter = THREE.LinearFilter;
-    aVal.magFilter = THREE.LinearFilter;
-    aVal.repeat.set(nVal, iVal);
-    aVal.needsUpdate = true;
-    return aVal;
-  },
-  g = h(m, 7.2, Math.max(1, n / 48 * 1.5)),
-  _ = h(m, Math.max(1, t / 48 * 1.5), 7.2),
-  v = h(m, Math.max(1, t / 48 * 1.5), Math.max(1, n / 48 * 1.5)),
-  y = (tex: THREE.Texture) =>
-    new THREE.MeshStandardMaterial({color: 0xffffff, map: tex, metalness: .1, roughness: .9, side: 0}),
-  b = [y(g), y(g), y(_), y(_), y(v), y(v)],
-  x = new THREE.Mesh(new THREE.BoxGeometry(t / 48, n / 48, 4.8), b);
+  
+  const w = t / 48;
+  const h = n / 48;
+  const d = 4.8;
+  
+  const geom = new THREE.BoxGeometry(w, h, d);
+  const pos = geom.attributes.position;
+  const uv = geom.attributes.uv;
+  const norm = geom.attributes.normal;
+  
+  const scale = 0.75; // The zoom level we defined earlier
+  
+  for (let i = 0; i < uv.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    const nx = Math.abs(norm.getX(i));
+    const ny = Math.abs(norm.getY(i));
+    const nz = Math.abs(norm.getZ(i));
+    
+    // In our 2.5D setup translated to 3D, Z is UP (height of the wall).
+    // U (horizontal) goes around the wall. V (vertical) maps to Z.
+    if (nx > 0.5) {
+      uv.setXY(i, y * scale, z * scale);
+    } else if (ny > 0.5) {
+      uv.setXY(i, x * scale, z * scale);
+    } else if (nz > 0.5) {
+      uv.setXY(i, x * scale, y * scale);
+    }
+  }
+  
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0xffffff, 
+    map: m, 
+    metalness: .1, 
+    roughness: .9
+  });
+  
+  const x = new THREE.Mesh(geom, mat);
   x.castShadow = true;
   x.receiveShadow = true;
   f.add(x);
   
-  const S_mat = new THREE.MeshStandardMaterial({color: p, emissive: p, emissiveIntensity: .3, metalness: .5, roughness: .4});
-  const S = new THREE.Mesh(new THREE.BoxGeometry(t / 48 + .05, .04, .05), S_mat);
-  S.position.y = n / 48 / 2 + .02;
-  S.position.z = 2.4;
-  f.add(S);
   return f;
 }
 
@@ -62,6 +78,7 @@ export class EnvironmentRenderer {
   surrealTexture4!: THREE.Texture;
   skyDayTexture!: THREE.Texture;
   skyNightTexture!: THREE.Texture;
+  tubesTexture!: THREE.Texture;
 
   constructor(scene: THREE.Scene, renderer: THREE.WebGLRenderer, clock: THREE.Clock) {
     this.scene = scene;
@@ -179,12 +196,19 @@ export class EnvironmentRenderer {
     this.skyNightTexture.repeat.set(6, 4);
     this.skyNightTexture.minFilter = THREE.LinearFilter;
     this.skyNightTexture.magFilter = THREE.LinearFilter;
+    
+    this.tubesTexture = t.load(`/textures/main/tubes_texture.jpg`);
+    this.tubesTexture.wrapS = THREE.RepeatWrapping;
+    this.tubesTexture.wrapT = THREE.RepeatWrapping;
+    this.tubesTexture.repeat.set(1, 1);
+    this.tubesTexture.minFilter = THREE.LinearFilter;
+    this.tubesTexture.magFilter = THREE.LinearFilter;
   }
 
   setupLights() {
-    const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.1);
     this.scene.add(ambient);
-    const dir = new THREE.DirectionalLight(0xffffff, 0.7);
+    const dir = new THREE.DirectionalLight(0xffffff, 0.4);
     dir.position.set(15, 25, 20);
     dir.castShadow = true;
     dir.shadow.mapSize.width = 2048;
@@ -195,6 +219,7 @@ export class EnvironmentRenderer {
     dir.shadow.camera.right = 30;
     dir.shadow.camera.top = 30;
     dir.shadow.camera.bottom = -30;
+    dir.shadow.bias = -0.0005;
     this.scene.add(dir);
     this.purpleLight = new THREE.PointLight(0xaaaaaa, 0.5, 35);
     this.purpleLight.position.set(-12, 8, 12);
@@ -217,13 +242,13 @@ export class EnvironmentRenderer {
     const grass = new THREE.TextureLoader().load(`/textures/main/floor_grass_bw.jpg`);
     grass.wrapS = THREE.RepeatWrapping;
     grass.wrapT = THREE.RepeatWrapping;
-    grass.repeat.set(450, 450);
+    grass.repeat.set(900, 900);
     grass.minFilter = THREE.LinearMipmapLinearFilter;
     grass.magFilter = THREE.LinearFilter;
     grass.generateMipmaps = true;
     grass.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
     
-    const groundMat = new THREE.MeshStandardMaterial({color: 0xffffff, map: grass, metalness: 0.05, roughness: 0.95});
+    const groundMat = new THREE.MeshStandardMaterial({color: 0x444444, map: grass, metalness: 0.05, roughness: 0.95});
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000), groundMat);
     ground.position.set(240, -160, -1.09);
     ground.receiveShadow = true;
@@ -232,17 +257,33 @@ export class EnvironmentRenderer {
     
     const s = [-25, -18, -10, 50, 58, 65],
         l = [-35, -28, -20, -10, 0, 10];
+
     for (const eVal of s) {
       for (const tVal of l) {
+        const randomScale = Math.abs(Math.sin(eVal * 7.32 + tVal * 3.14));
+        const w = 0.7 + randomScale * 1.3;
+        const depth = 15 + randomScale * 30;
+
+        const radius = w / 2;
+        const colGeom = new THREE.CylinderGeometry(radius, radius, depth, 16);
+        colGeom.rotateX(Math.PI / 2); // Make it point along Z axis
+        
+        const uv = colGeom.attributes.uv;
+        for (let i = 0; i < uv.count; i++) {
+          uv.setY(i, uv.getY(i) * (depth / 3.5));
+          uv.setX(i, uv.getX(i) * 2); // Wrap texture 2 times around the cylinder
+        }
+
         const nVal = (eVal + tVal) % 2 === 0;
         const rValMat = new THREE.MeshStandardMaterial({
-          color: 0x1a1a1a,
-          emissive: nVal ? 0x333333 : 0x222222,
-          emissiveIntensity: 0.4,
-          metalness: 0.85,
-          roughness: 0.15
+          color: 0x666666,
+          map: this.tubesTexture,
+          emissive: nVal ? 0x2a2a2a : 0x151515,
+          emissiveIntensity: 0.3,
+          metalness: 0.7,
+          roughness: 0.3
         });
-        const rVal = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 28), rValMat);
+        const rVal = new THREE.Mesh(colGeom, rValMat);
         rVal.position.set(eVal, tVal, -5);
         rVal.receiveShadow = true;
         rVal.castShadow = true;
@@ -272,9 +313,9 @@ export class EnvironmentRenderer {
       e[n * 3] = (Math.random() - 0.5) * 70;
       e[n * 3 + 1] = (Math.random() - 0.5) * 50;
       e[n * 3 + 2] = -0.5 + Math.random() * 2;
-      t[n * 3] = 0.13;
-      t[n * 3 + 1] = 0.83;
-      t[n * 3 + 2] = 0.93;
+      t[n * 3] = 0.8;
+      t[n * 3 + 1] = 0.8;
+      t[n * 3 + 2] = 0.8;
     }
     const n = new THREE.BufferGeometry();
     n.setAttribute(`position`, new THREE.BufferAttribute(e, 3));
@@ -395,8 +436,8 @@ export class EnvironmentRenderer {
 
   parseColor(eVal: string) {
     if (eVal.includes(`217, 70, 239`)) return {r: 0.85, g: 0.27, b: 0.94};
-    if (eVal.includes(`6, 182, 212`)) return {r: 0.02, g: 0.71, b: 0.83};
-    if (eVal.includes(`34, 211, 238`)) return {r: 0.13, g: 0.83, b: 0.93};
+    if (eVal.includes(`6, 182, 212`)) return {r: 0.8, g: 0.8, b: 0.8};
+    if (eVal.includes(`34, 211, 238`)) return {r: 0.8, g: 0.8, b: 0.8};
     if (eVal.includes(`236, 72, 153`)) return {r: 0.93, g: 0.28, b: 0.6};
     return {r: 1, g: 1, b: 1};
   }

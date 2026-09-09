@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { EnvironmentRenderer } from './EnvironmentRenderer';
 import { PandoraRenderer } from './PandoraRenderer';
 import { EntityRenderer } from './EntityRenderer';
@@ -17,6 +19,7 @@ export class CoreRenderer {
   clock: THREE.Clock;
   composer!: EffectComposer;
   bloomPass!: UnrealBloomPass;
+  ssaoPass!: SSAOPass;
 
   envRenderer!: EnvironmentRenderer;
   pandoraRenderer!: PandoraRenderer;
@@ -54,14 +57,22 @@ export class CoreRenderer {
   initScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x111111);
-    this.scene.fog = new THREE.Fog(0x111111, 8, 40);
+    this.scene.fog = new THREE.FogExp2(0x111111, 0.015);
     const aspect = this.container.clientWidth / this.container.clientHeight;
     this.camera = new THREE.PerspectiveCamera(65, aspect, 0.05, 500);
-    this.renderer = new THREE.WebGLRenderer({antialias: false, alpha: false});
+    this.renderer = new THREE.WebGLRenderer({antialias: true, alpha: false, powerPreference: 'high-performance'});
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure = 0.6;
+
+    // Environment map for PBR reflections
+    const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
+    pmremGenerator.compileEquirectangularShader();
+    this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
+
     this.container.appendChild(this.renderer.domElement);
   }
 
@@ -119,9 +130,19 @@ export class CoreRenderer {
 
   setupPostProcessing(w: number, h: number) {
     this.composer = new EffectComposer(this.renderer);
-    const n = new RenderPass(this.scene, this.camera);
-    this.composer.addPass(n);
-    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.5, 0.4, 0.85);
+    
+    const renderPass = new RenderPass(this.scene, this.camera);
+    this.composer.addPass(renderPass);
+    
+    // Ambient Occlusion
+    this.ssaoPass = new SSAOPass(this.scene, this.camera, w, h);
+    this.ssaoPass.kernelRadius = 1.2;
+    this.ssaoPass.minDistance = 0.005;
+    this.ssaoPass.maxDistance = 0.1;
+    // this.composer.addPass(this.ssaoPass); // DISABLED: Causes dark shadow aura around player
+
+    // Bloom
+    this.bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.3, 0.4, 0.95);
     this.composer.addPass(this.bloomPass);
   }
 
@@ -141,8 +162,8 @@ export class CoreRenderer {
     this.entityRenderer.createShadow(x, y);
   }
 
-  updateShadow(x: number, y: number, isStunned = false) {
-    this.entityRenderer.updateShadow(x, y, isStunned);
+  updateShadow(x: number, y: number, isStunned = false, facingAngle = 0) {
+    this.entityRenderer.updateShadow(x, y, isStunned, facingAngle);
   }
 
   createPlatform(x: number, y: number, w: number, h: number, isReverie = false, _a = 0) {

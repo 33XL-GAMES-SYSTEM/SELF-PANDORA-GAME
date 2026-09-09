@@ -134,7 +134,7 @@ export class LevelManager {
     const SPACING_Y = 2400;
     
     this.playerSpawn = { x: SPACING_X, y: SPACING_Y - 60 };
-    this.shadowSpawn = { x: SPACING_X + 1200, y: SPACING_Y };
+    this.shadowSpawn = { x: SPACING_X + 3200, y: SPACING_Y + 2800 };
     
     const rng = seededRandom(42);
 
@@ -158,7 +158,7 @@ export class LevelManager {
         x: worldX + 180 + rng() * 200,
         y: worldY - 80 - rng() * 120,
         w: 15, h: 15, collected: false,
-        text: thoughts[0] || 'Um fragmento de verdade...',
+        text: thoughts[0] || 'Uma Elpis encontrada...',
         nexusNumber: e.number
       });
       this.worldReminiscences.push({
@@ -349,6 +349,28 @@ export class LevelManager {
       const rigidBody = world.createRigidBody(bodyDesc);
       const colliderDesc = RAPIER.ColliderDesc.cuboid(platform.w / 2, platform.h / 2, 50);
       world.createCollider(colliderDesc, rigidBody);
+    }
+    
+    // Add collisions for the vertical background columns
+    const s = [-25, -18, -10, 50, 58, 65],
+          l = [-35, -28, -20, -10, 0, 10];
+    for (const eVal of s) {
+      for (const tVal of l) {
+        const x_phys = (eVal + 10) * 48;
+        const y_phys = (5 - tVal) * 48;
+        
+        const randomScale = Math.abs(Math.sin(eVal * 7.32 + tVal * 3.14));
+        const w = 0.7 + randomScale * 1.3;
+        
+        // width and height in physics scale
+        const radius_phys = (w / 2) * 48;
+        
+        const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(x_phys, y_phys, 0);
+        const rigidBody = world.createRigidBody(bodyDesc);
+        // Using a cuboid for the hitbox as it closely matches the cylinder on the XY plane
+        const colliderDesc = RAPIER.ColliderDesc.cuboid(radius_phys, radius_phys, 50);
+        world.createCollider(colliderDesc, rigidBody);
+      }
     }
   }
 }

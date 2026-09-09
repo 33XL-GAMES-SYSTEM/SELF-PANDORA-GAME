@@ -647,3 +647,54 @@ body.state-reverie #game-container {
     filter: blur(0);
   }
 }
+
+/* ── Sanity Vignette Overlay ─────────────────────────────────────────────── */
+#sanity-vignette {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  opacity: 0;
+  transition: opacity 1.2s ease;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 30%,
+    rgba(120, 0, 0, 0.35) 70%,
+    rgba(80, 0, 0, 0.75) 100%
+  );
+}
+
+#sanity-vignette.sanity-low {
+  opacity: 0.55;
+}
+
+#sanity-vignette.sanity-danger {
+  opacity: 0.8;
+  animation: sanity-vignette-pulse 1.8s ease-in-out infinite;
+}
+
+#sanity-vignette.sanity-critical {
+  opacity: 1;
+  background: radial-gradient(
+    ellipse at center,
+    transparent 10%,
+    rgba(180, 0, 0, 0.5) 55%,
+    rgba(120, 0, 0, 0.9) 100%
+  );
+  animation: sanity-vignette-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes sanity-vignette-pulse {
+  0%, 100% { opacity: 0.6; }
+  50%       { opacity: 1.0; }
+}
+
+/* ── Sanity Bar Critical Pulse ────────────────────────────────────────────── */
+.sanity-critical-pulse {
+  animation: sanity-bar-pulse 0.7s ease-in-out infinite;
+}
+
+@keyframes sanity-bar-pulse {
+  0%, 100% { opacity: 1;   box-shadow: 0 0 18px rgba(255, 30, 30, 0.9); }
+  50%       { opacity: 0.6; box-shadow: 0 0 30px rgba(255, 0,  0,  1.0); }
+}
